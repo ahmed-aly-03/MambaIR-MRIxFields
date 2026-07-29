@@ -2,6 +2,7 @@ import random
 from pathlib import Path
 
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 from . import utils
 
@@ -24,14 +25,14 @@ class UnpairedSliceDataset(Dataset):
         if not src_volumes or not tgt_volumes:
             raise RuntimeError(f"no retrospective volumes found for {contrast} {source_field}/{target_field}")
 
-        self.src_slices = self._index_slices(src_volumes)
-        self.tgt_slices = self._index_slices(tgt_volumes)
+        self.src_slices = self._index_slices(src_volumes, f"{source_field} (source)")
+        self.tgt_slices = self._index_slices(tgt_volumes, f"{target_field} (target)")
         if not self.src_slices or not self.tgt_slices:
             raise RuntimeError("no foreground slices found -- check min_fg_frac / slice_axis")
 
-    def _index_slices(self, volumes: dict):
+    def _index_slices(self, volumes: dict, label: str):
         index = []
-        for _id, path in volumes.items():
+        for _id, path in tqdm(volumes.items(), desc=f"indexing {label}", unit="volume"):
             vol = utils.load_volume(path)
             for s in utils.foreground_slice_indices(vol, self.slice_axis, self.min_fg_frac):
                 index.append((path, s))
@@ -71,7 +72,7 @@ class PairedSliceDataset(Dataset):
         gt_volumes = utils.find_volumes(root, "Training_prospective", contrast, target_field, prefix="P")
 
         self.index = []
-        for sid in subject_ids:
+        for sid in tqdm(subject_ids, desc=f"indexing {source_field}->{target_field} pairs", unit="subject"):
             if sid not in lq_volumes or sid not in gt_volumes:
                 continue
             lq_vol = utils.load_volume(lq_volumes[sid])
