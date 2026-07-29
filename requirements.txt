@@ -1,0 +1,8 @@
+# On top of the MambaIR environment (see MambaIR/README.md "Installation" for
+# torch/CUDA/mamba_ssm/causal_conv1d, which need matching CUDA toolkit versions and
+# are best installed by hand). This file only adds what the mri/ and train.py code
+# needs beyond that.
+nibabel>=5.1
+numpy>=1.24
+pyyaml>=6.0
+tqdm>=4.66

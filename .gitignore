@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+runs/
+pretrained/
+*.pth
+*.nii.gz
+.DS_Store
