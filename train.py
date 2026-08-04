@@ -223,6 +223,11 @@ def run_stage2(args, model, device, log):
     mri_model.save_checkpoint(model, str(out_dir / "stage2_final.pth"))
     log(f"[stage2] done, saved {out_dir / 'stage2_final.pth'}")
 
+    if val_loader is not None:
+        final_l1, final_ssim = evaluate(model, val_loader, device)
+        log(f"[stage2] FINAL val (subjects {sorted(val_ids)}) L1 {final_l1:.4f} SSIM {final_ssim:.4f} "
+            f"(best during training: SSIM {best_ssim:.4f})")
+
 
 def make_logger(out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
