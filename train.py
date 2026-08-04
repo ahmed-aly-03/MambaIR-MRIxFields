@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import json
 import time
 from pathlib import Path
 
@@ -187,6 +188,22 @@ def run_stage2(args, model, device, log):
     out_dir.mkdir(parents=True, exist_ok=True)
     best_ssim = -1.0
 
+    val_history = []
+    val_results_path = out_dir / "validation_results.json"
+
+    def record_val(step, val_l1, val_ssim, final=False):
+        val_history.append({"step": step, "l1": val_l1, "ssim": val_ssim, "final": final})
+        payload = {
+            "val_subjects": sorted(val_ids),
+            "train_subjects": train_ids,
+            "history": val_history,
+            "best_ssim": max(r["ssim"] for r in val_history),
+        }
+        tmp = val_results_path.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(payload, f, indent=2)
+        tmp.replace(val_results_path)
+
     model.train()
     step = 0
     t0 = time.time()
@@ -211,6 +228,7 @@ def run_stage2(args, model, device, log):
             if val_loader is not None and step % args.val_every == 0 and step > 0:
                 val_l1, val_ssim = evaluate(model, val_loader, device)
                 log(f"[stage2] step {step} val L1 {val_l1:.4f} SSIM {val_ssim:.4f}")
+                record_val(step, val_l1, val_ssim)
                 if val_ssim > best_ssim:
                     best_ssim = val_ssim
                     mri_model.save_checkpoint(model, str(out_dir / "stage2_best.pth"),
@@ -227,6 +245,8 @@ def run_stage2(args, model, device, log):
         final_l1, final_ssim = evaluate(model, val_loader, device)
         log(f"[stage2] FINAL val (subjects {sorted(val_ids)}) L1 {final_l1:.4f} SSIM {final_ssim:.4f} "
             f"(best during training: SSIM {best_ssim:.4f})")
+        record_val(args.stage2_iters, final_l1, final_ssim, final=True)
+        log(f"[stage2] validation history saved to {val_results_path}")
 
 
 def make_logger(out_dir: Path):
