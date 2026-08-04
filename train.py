@@ -73,6 +73,7 @@ def build_model_for_stage(args, device):
         d_state=args.d_state,
         convffn_kernel_size=args.convffn_kernel_size,
         img_size=args.patch_size,
+        use_checkpoint=args.use_checkpoint,
     )
     return net.to(device)
 
@@ -271,6 +272,9 @@ def parse_args():
     p.add_argument("--num-tokens", type=int, default=128)
     p.add_argument("--d-state", type=int, default=16)
     p.add_argument("--convffn-kernel-size", type=int, default=5)
+    p.add_argument("--use-checkpoint", action="store_true",
+                   help="gradient checkpointing (trades compute for a large activation-memory cut, "
+                        "especially valuable for stage 1's double forward+backward pass)")
 
     # stage 1 (unpaired PatchNCE)
     p.add_argument("--stage1-iters", type=int, default=20000)

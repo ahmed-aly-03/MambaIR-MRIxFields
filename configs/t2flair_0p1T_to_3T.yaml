@@ -20,6 +20,10 @@ inner_rank: 64
 num_tokens: 128
 d_state: 16
 convffn_kernel_size: 5
+# Stage 1 runs two full forward+backward passes per step through all 36
+# ASSB/BasicBlock layers at full patch resolution -- on an H100 this alone got a
+# single job to ~78GB. Checkpointing trades some speed for a large memory cut.
+use_checkpoint: true
 
 patch_size: 128
 slice_axis: 2

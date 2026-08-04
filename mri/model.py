@@ -30,6 +30,7 @@ def build_mambairv2(
     img_size: int = 64,
     img_range: float = 1.0,
     resi_connection: str = "1conv",
+    use_checkpoint: bool = False,
 ) -> MambaIRv2:
     """MambaIRv2 configured for field-to-field MRI translation, not spatial SR:
     - in_chans=1 (single-channel MRI, not RGB)
@@ -38,6 +39,11 @@ def build_mambairv2(
       global residual (this is MambaIRv2's built-in "denoising" branch -- see
       `basicsr/archs/mambairv2_arch.py` forward(), the `else` clause), which is
       exactly "remove the SR upsampling head and replace it with a conv3x3 head".
+    - use_checkpoint enables MambaIRv2's built-in per-block gradient checkpointing
+      (trades recompute for a large activation-memory cut during backward) -- stage 1
+      in particular runs two full forward+backward passes per step through all 36
+      ASSB/BasicBlock layers (6 stages x depth 6) at full patch resolution, which is
+      easy to push past 80GB without it.
     """
     return MambaIRv2(
         img_size=img_size,
@@ -56,6 +62,7 @@ def build_mambairv2(
         img_range=img_range,
         upsampler="",
         resi_connection=resi_connection,
+        use_checkpoint=use_checkpoint,
     )
 
 
