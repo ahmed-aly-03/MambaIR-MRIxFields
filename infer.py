@@ -1,22 +1,32 @@
 #!/usr/bin/env python
 """Run a trained MambaIRv2 checkpoint over Validating_prospective and package a
-Task 2 (0.1T -> higher field) T2FLAIR submission, per the official MRIxFields2026
-challenge repo's spec (github.com/mrixfields/MRIxFields2026, Submission/README.md):
+Task 1 or Task 2 submission, per the official MRIxFields2026 challenge repo's spec
+(github.com/mrixfields/MRIxFields2026, Submission/README.md):
 
 - Predictions: NIfTI float32, shape (X, Y, 30) -- the axial slab z in [150, 180)
   of the full (364, 436, 364) grid -- intensity in [0, 1].
 - Filename: P_{MOD}_{TARGET_FIELD}_{ID:04d}.nii.gz (source ID kept, field tag
   swapped to the target field).
-- Directory: <submission-dir>/task2/<MOD>/<SRC>_to_<TGT>/pred/<file>
-- Zip root must be task2/ itself: `cd <submission-dir> && zip -r ~/task2.zip task2/`
+- Directory: <submission-dir>/<task>/<MOD>/<SRC>_to_<TGT>/pred/<file>
+- Zip root must be <task>/ itself: `cd <submission-dir> && zip -r ~/<task>.zip <task>/`
 
-Scope: T2FLAIR, 0.1T -> 3T only (matching train.py). Validation-phase released
-0.1T subject IDs are 0001, 0002, 0003 (also per Submission/README.md).
+Which subject IDs the official validation-phase release actually has for a given
+--source-field (see Submission/README.md): 0.1T -> 0001/0002/0003, 1.5T ->
+0004/0005/0008, 3T -> 0010/0011/0012, 5T -> 0013/0014/0015, 7T -> 0016/0017/0018.
+--subject-ids isn't required (defaults to every file found in --input-dir) but is
+there to restrict to a subset.
+
+Model/data scope tested so far: T2FLAIR only (matching train.py); --source-field/
+--target-field are otherwise generic (any field pair the retrospective/prospective
+data supports), only --task (task1's dir root is "task1" vs task2's "task2") needs
+picking correctly for the output to land in the officially-expected structure.
 
 This does NOT produce seg/ (SynthSeg segmentation) -- that needs the separate
 SynthSeg tool from the official repo (Baseline/scripts/segment_predictions.py or
 Evaluation/segment.py). Per the official spec, a submission with zero seg files
-still scores SSIM/nRMSE/LPIPS normally; only Dice/Volume come back null.
+still scores SSIM/nRMSE/LPIPS normally; only Dice/Volume come back null. Note
+Task 1 (unlike Task 2) marks seg/ mandatory in the official spec, so a Task 1
+submission without it should be treated as a smoke test, not a real submission.
 """
 from __future__ import annotations
 
@@ -134,7 +144,9 @@ def parse_args():
                         "(default: <data-root>/Validating_prospective/<contrast>/<source-field>/)")
     p.add_argument("--subject-ids", nargs="+", default=None,
                    help="restrict to these IDs (default: all files found in --input-dir)")
-    p.add_argument("--submission-dir", required=True, help="output root; files land in <submission-dir>/task2/...")
+    p.add_argument("--submission-dir", required=True, help="output root; files land in <submission-dir>/<task>/...")
+    p.add_argument("--task", choices=["task1", "task2"], default="task2",
+                   help="task1 = Any->7T, task2 = 0.1T->Higher; picks the submission dir root and default zip name")
     p.add_argument("--contrast", default="T2FLAIR")
     p.add_argument("--source-field", default="0.1T")
     p.add_argument("--target-field", default="3T")
@@ -142,7 +154,7 @@ def parse_args():
     p.add_argument("--device", default="cuda")
     p.add_argument("--save-full-volumes", default=None,
                    help="optional directory to also dump the full (uncropped) predicted volumes, for visual QC")
-    p.add_argument("--zip", action="store_true", help="also write <submission-dir>/../task2.zip with the correct root")
+    p.add_argument("--zip", action="store_true", help="also write <submission-dir>/../<task>.zip with the correct root")
 
     # model architecture (must match the checkpoint's training config)
     p.add_argument("--patch-size", type=int, default=128)
@@ -189,7 +201,7 @@ def main():
     print(f"running inference on {len(files)} volumes from {input_dir}")
 
     pair = f"{args.source_field}_to_{args.target_field}"
-    pred_dir = Path(args.submission_dir) / "task2" / args.contrast / pair / "pred"
+    pred_dir = Path(args.submission_dir) / args.task / args.contrast / pair / "pred"
     pred_dir.mkdir(parents=True, exist_ok=True)
 
     if args.save_full_volumes:
@@ -212,11 +224,14 @@ def main():
     print("NOTE: no seg/ written -- Dice/Volume will score as null; SSIM/nRMSE/LPIPS score normally.")
     print("      Run the official repo's Baseline/scripts/segment_predictions.py (or Evaluation/segment.py) "
           "on these predictions first if you also want Dice/Volume.")
+    if args.task == "task1":
+        print("NOTE: Task 1's official spec marks seg/ mandatory (unlike Task 2) -- "
+              "without it, treat this as a smoke test, not a submission-ready run.")
 
     if args.zip:
-        zip_path = Path(args.submission_dir).parent / "task2.zip"
-        make_zip(Path(args.submission_dir), "task2", zip_path)
-        print(f"wrote {zip_path} (verify with: unzip -l {zip_path} | head -3 -- first entry should be task2/)")
+        zip_path = Path(args.submission_dir).parent / f"{args.task}.zip"
+        make_zip(Path(args.submission_dir), args.task, zip_path)
+        print(f"wrote {zip_path} (verify with: unzip -l {zip_path} | head -3 -- first entry should be {args.task}/)")
 
 
 if __name__ == "__main__":

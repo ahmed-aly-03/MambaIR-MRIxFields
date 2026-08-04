@@ -1,0 +1,53 @@
+# Defaults for T2FLAIR, 3T -> 7T (Task 1: Any -> 7T). Any of these can still be
+# overridden on the command line, e.g.:
+#   python train.py --config configs/t2flair_3T_to_7T.yaml --data-root /path/to/ChallengeData --out-dir runs/t2flair_3T_7T
+#
+# --data-root and --out-dir are deliberately left out -- they're specific to each
+# machine/run, pass them on the command line.
+#
+# Only difference from configs/t2flair_0p1T_to_3T.yaml is source_field/target_field
+# -- everything else (architecture, losses, iteration counts) is untouched. Retrospective
+# 7T has ~319 volumes vs 3T's ~143 (462 total vs. the 0.1T/3T pair's ~242), so the
+# one-time indexing scan (mri/datasets.py, cached after the first run) will likely take
+# longer than it did for 0.1T->3T -- pass --stage1-iters/--stage2-iters to cut this
+# trial run shorter if you just want to sanity-check the pipeline on this field pair.
+
+contrast: T2FLAIR
+source_field: "3T"
+target_field: "7T"
+stage: both
+
+# MambaIRv2 backbone -- matches the official MambaIRv2_SR (base) config so that
+# --pretrained can point directly at an official MambaIRv2 SR/denoising checkpoint.
+embed_dim: 174
+depths: [6, 6, 6, 6, 6, 6]
+num_heads: [6, 6, 6, 6, 6, 6]
+window_size: 16
+inner_rank: 64
+num_tokens: 128
+d_state: 16
+convffn_kernel_size: 5
+
+patch_size: 128
+slice_axis: 2
+index_workers: 8
+min_fg_frac: 0.05
+num_workers: 8
+
+# stage 1: unpaired PatchNCE on retrospective data
+stage1_iters: 20000
+stage1_batch_size: 4
+stage1_lr: 0.0002
+nce_t: 0.07
+nce_num_patches: 256
+nce_num_taps: 4
+nce_main_weight: 1.0
+idt_weight: 0.0
+
+# stage 2: paired supervised finetuning on prospective data
+stage2_iters: 5000
+stage2_batch_size: 8
+stage2_lr: 0.00001
+l1_weight: 1.0
+ssim_weight: 0.2
+val_every: 250
