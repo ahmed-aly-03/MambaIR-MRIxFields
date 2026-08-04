@@ -39,11 +39,15 @@ def build_mambairv2(
       global residual (this is MambaIRv2's built-in "denoising" branch -- see
       `basicsr/archs/mambairv2_arch.py` forward(), the `else` clause), which is
       exactly "remove the SR upsampling head and replace it with a conv3x3 head".
-    - use_checkpoint enables MambaIRv2's built-in per-block gradient checkpointing
-      (trades recompute for a large activation-memory cut during backward) -- stage 1
-      in particular runs two full forward+backward passes per step through all 36
-      ASSB/BasicBlock layers (6 stages x depth 6) at full patch resolution, which is
-      easy to push past 80GB without it.
+    - use_checkpoint enables gradient checkpointing of each of the 36 individual
+      AttentiveLayer sub-blocks (6 ASSB stages x depth 6), trading recompute for a
+      large activation-memory cut during backward. NOTE: upstream MambaIRv2 accepts
+      this flag at every level (MambaIRv2/ASSB/BasicBlock) but never actually used it
+      -- it was a no-op. We patched BasicBlock.forward() in the vendored
+      basicsr/archs/mambairv2_arch.py to actually wrap each AttentiveLayer call in
+      torch.utils.checkpoint.checkpoint(). Stage 1 runs two full forward+backward
+      passes per step at full patch resolution, which is easy to push past 80GB
+      without this.
     """
     return MambaIRv2(
         img_size=img_size,

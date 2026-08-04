@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.utils.checkpoint as checkpoint
 from basicsr.archs.arch_util import to_2tuple, trunc_normal_
 from mamba_ssm.ops.selective_scan_interface import selective_scan_fn, selective_scan_ref
 from basicsr.utils.registry import ARCH_REGISTRY
@@ -544,6 +545,7 @@ class BasicBlock(nn.Module):
         self.input_resolution = input_resolution
         self.depth = depth
         self.idx = idx
+        self.use_checkpoint = use_checkpoint
 
         self.layers = nn.ModuleList()
         for i in range(depth):
@@ -574,7 +576,10 @@ class BasicBlock(nn.Module):
     def forward(self, x, x_size, params):
         b, n, c = x.shape
         for layer in self.layers:
-            x = layer(x, x_size, params)
+            if self.use_checkpoint and self.training:
+                x = checkpoint.checkpoint(layer, x, x_size, params, use_reentrant=False)
+            else:
+                x = layer(x, x_size, params)
         if self.downsample is not None:
             x = self.downsample(x)
         return x
@@ -816,6 +821,7 @@ class MambaIRv2(nn.Module):
             self.mean = torch.zeros(1, 1, 1, 1)
         self.upscale = upscale
         self.upsampler = upsampler
+        self.use_checkpoint = use_checkpoint
 
         # ------------------------- 1, shallow feature extraction ------------------------- #
         self.conv_first = nn.Conv2d(num_in_ch, embed_dim, 3, 1, 1)
