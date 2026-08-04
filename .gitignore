@@ -5,3 +5,4 @@ pretrained/
 *.pth
 *.nii.gz
 .DS_Store
+.index_cache/

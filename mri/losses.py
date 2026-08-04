@@ -16,13 +16,20 @@ class PatchSampleMLP(nn.Module):
         super().__init__()
         self.num_patches = num_patches
         self.use_mlp = use_mlp
+        # nn.ModuleDict keys can't contain "." (raises KeyError), but layer names
+        # like "layers.0" do -- since they're module paths from named_modules(). Store
+        # under a sanitized key and translate on lookup in forward().
         if use_mlp:
             self.mlps = nn.ModuleDict({
-                name: nn.Sequential(
+                self._safe_key(name): nn.Sequential(
                     nn.Linear(feature_dim, hidden_dim), nn.ReLU(inplace=True), nn.Linear(hidden_dim, out_dim)
                 )
                 for name in layer_names
             })
+
+    @staticmethod
+    def _safe_key(name: str) -> str:
+        return name.replace(".", "__")
 
     @staticmethod
     def _to_blc(feat: torch.Tensor) -> torch.Tensor:
@@ -42,7 +49,7 @@ class PatchSampleMLP(nn.Module):
                 ids = torch.randperm(L, device=feat.device)[:n]
             sampled = feat[:, ids, :]
             if self.use_mlp:
-                sampled = self.mlps[name](sampled)
+                sampled = self.mlps[self._safe_key(name)](sampled)
             sampled = F.normalize(sampled, dim=-1)
             out_feats[name] = sampled
             out_ids[name] = ids

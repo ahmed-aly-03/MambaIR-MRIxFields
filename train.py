@@ -82,6 +82,7 @@ def run_stage1(args, model, device, log):
     dataset = UnpairedSliceDataset(
         root, args.contrast, args.source_field, args.target_field,
         patch_size=args.patch_size, slice_axis=args.slice_axis, min_fg_frac=args.min_fg_frac,
+        index_workers=args.index_workers,
     )
     loader = DataLoader(dataset, batch_size=args.stage1_batch_size, shuffle=True,
                          num_workers=args.num_workers, drop_last=True, persistent_workers=args.num_workers > 0)
@@ -256,6 +257,8 @@ def parse_args():
     p.add_argument("--patch-size", type=int, default=128)
     p.add_argument("--slice-axis", type=int, default=2, help="NIfTI axis to slice 2D images from")
     p.add_argument("--min-fg-frac", type=float, default=0.05)
+    p.add_argument("--index-workers", type=int, default=8,
+                   help="threads used for the one-time foreground-slice indexing scan (cached to .index_cache/ after)")
 
     # model / pretrained
     p.add_argument("--pretrained", default=None, help="path to an upstream MambaIRv2 .pth (3-channel) to adapt")
