@@ -40,52 +40,10 @@ import torch
 import yaml
 from tqdm import tqdm
 
-from mri import model as mri_model
+from mri.inference import build_model, run_one_volume, subject_id_of
 
 # Single source of truth in the official repo: Baseline/mrixfields/zclip_constants.py
 Z_CLIP_RANGE = (150, 180)
-
-
-def predict_volume(model, volume: np.ndarray, slice_axis: int, device) -> np.ndarray:
-    """Slice-by-slice inference along `slice_axis`. Input/output stay in [0, 1]
-    (matching how train.py's datasets feed the model -- no [-1,1] rescale)."""
-    output = np.zeros_like(volume, dtype=np.float32)
-    n = volume.shape[slice_axis]
-    with torch.no_grad():
-        for i in range(n):
-            idx = [slice(None)] * volume.ndim
-            idx[slice_axis] = i
-            idx = tuple(idx)
-            sl = np.clip(volume[idx], 0.0, 1.0).astype(np.float32)
-            tensor = torch.from_numpy(sl).unsqueeze(0).unsqueeze(0).to(device)
-            pred = model(tensor).clamp(0.0, 1.0)
-            output[idx] = pred.squeeze(0).squeeze(0).cpu().numpy()
-    return output
-
-
-def run_one_volume(model, src_path: Path, slice_axis: int, device) -> nib.Nifti1Image:
-    """Canonical-orientation round trip + background remasking, matching the
-    official baseline's Baseline/scripts/inference.py `predict_volume`/`main`."""
-    original_img = nib.load(str(src_path))
-    original_affine = original_img.affine
-    original_ornt = nib.io_orientation(original_affine)
-
-    canonical_img = nib.as_closest_canonical(original_img)
-    canonical_ornt = nib.io_orientation(canonical_img.affine)
-    canonical_data = canonical_img.get_fdata(dtype=np.float32)
-
-    pred = predict_volume(model, canonical_data, slice_axis, device)
-
-    transform = nib.orientations.ornt_transform(canonical_ornt, original_ornt)
-    pred = nib.orientations.apply_orientation(pred, transform)
-
-    # Skull-stripped input -> background should stay exactly 0; the network's
-    # global residual can leak small nonzero values there, so remask using the
-    # original (un-reoriented) input as a brain mask.
-    src_arr = original_img.get_fdata(dtype=np.float32)
-    pred = pred * (src_arr > 1e-6).astype(pred.dtype)
-
-    return nib.Nifti1Image(pred.astype(np.float32), original_affine, header=original_img.header)
 
 
 def clip_axial(img: nib.Nifti1Image, z_range=Z_CLIP_RANGE) -> nib.Nifti1Image:
@@ -95,29 +53,6 @@ def clip_axial(img: nib.Nifti1Image, z_range=Z_CLIP_RANGE) -> nib.Nifti1Image:
     Submission/README.md "Axial slice range" in the official repo."""
     z0, z1 = z_range
     return img.slicer[:, :, z0:z1]
-
-
-def build_model(args, device):
-    net = mri_model.build_mambairv2(
-        in_chans=1,
-        embed_dim=args.embed_dim,
-        depths=tuple(args.depths),
-        num_heads=tuple(args.num_heads),
-        window_size=args.window_size,
-        inner_rank=args.inner_rank,
-        num_tokens=args.num_tokens,
-        d_state=args.d_state,
-        convffn_kernel_size=args.convffn_kernel_size,
-        img_size=args.patch_size,
-    )
-    net = net.to(device)
-    mri_model.load_checkpoint(net, args.checkpoint, map_location=device)
-    net.eval()
-    return net
-
-
-def subject_id_of(path: Path) -> str:
-    return path.name.replace(".nii.gz", "").split("_")[-1]
 
 
 def make_zip(submission_dir: Path, task: str, zip_path: Path):

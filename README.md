@@ -179,6 +179,36 @@ python infer.py \
   trained with; passing the same `--config` you used for `train.py` handles this
   automatically (unrelated `stage1_*`/`stage2_*` keys in the yaml are just ignored).
 
+## 5. Evaluating against ground truth
+
+`evaluate.py` computes nRMSE / SSIM / LPIPS / PSNR / L1 for a checkpoint against real
+ground truth -- unlike `infer.py`, which runs on `Validating_prospective` (no released
+ground truth, so it can only produce predictions, not scores), this runs on
+`Training_prospective` subjects, typically whichever one you held out with
+`--stage2-val-ids`. nRMSE/SSIM/LPIPS are implemented to match the official
+evaluator's exact formulas (`Submission/evaluation-2026/evaluate.py` in
+[github.com/mrixfields/MRIxFields2026](https://github.com/mrixfields/MRIxFields2026)) --
+PSNR is not part of the official metric set, included anyway since it's a common
+diagnostic. Reports both the actual scored region (`official_slab`, the axial `z in
+[150, 180)` crop) and the whole brain (`full_volume`).
+
+```bash
+python evaluate.py \
+  --config configs/t2flair_0p1T_to_3T.yaml \
+  --checkpoint runs/t2flair_0p1T_3T/stage2/stage2_best.pth \
+  --data-root /path/to/ChallengeData \
+  --subject-ids 0009 \
+  --out runs/t2flair_0p1T_3T/stage2/final_metrics.json
+```
+
+`--subject-ids` can take more than one (space-separated) if multiple were held out;
+the output JSON includes per-subject numbers plus a mean across them. **Not
+computed**: Dice overlap / normalized volume consistency -- both need SynthSeg
+segmentation first (`Baseline/scripts/segment_predictions.py` or
+`Evaluation/segment.py` in the official repo), same scope limitation as `infer.py`.
+`lpips` downloads a small pretrained AlexNet checkpoint on first use -- needs
+outbound internet access on whichever machine runs this.
+
 ## Notes / things you may want to tune
 
 - **Stage 1 cost**: each step runs the model forward twice (once on the input patch,
