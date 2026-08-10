@@ -116,18 +116,23 @@ def compute_lpips(pred: np.ndarray, target: np.ndarray, device, slice_axis: int 
     return float(np.mean(vals)) if vals else 0.0
 
 
-def all_metrics(pred: np.ndarray, target: np.ndarray, device, slice_axis: int = 2) -> dict:
-    return {
-        "l1": float(np.mean(np.abs(pred.astype(np.float64) - target.astype(np.float64)))),
-        "psnr": compute_psnr(pred, target),
-        "nrmse": compute_nrmse(pred, target),
-        "ssim": compute_ssim(pred, target, slice_axis),
-        "lpips": compute_lpips(pred, target, device, slice_axis),
-    }
+def all_metrics(pred: np.ndarray, target: np.ndarray, device, slice_axis: int = 2, label: str = "") -> dict:
+    l1 = float(np.mean(np.abs(pred.astype(np.float64) - target.astype(np.float64))))
+    psnr = compute_psnr(pred, target)
+    nrmse = compute_nrmse(pred, target)
+    print(f"    [{label}] l1/psnr/nrmse done, running ssim ({pred.shape[slice_axis]} slices)...", flush=True)
+    ssim = compute_ssim(pred, target, slice_axis)
+    print(f"    [{label}] ssim done, running lpips (loads AlexNet on first call -- "
+          f"needs internet the very first time) ...", flush=True)
+    lpips_val = compute_lpips(pred, target, device, slice_axis)
+    print(f"    [{label}] lpips done", flush=True)
+    return {"l1": l1, "psnr": psnr, "nrmse": nrmse, "ssim": ssim, "lpips": lpips_val}
 
 
 def evaluate_subject(model, lq_path: Path, gt_path: Path, slice_axis: int, device) -> dict:
+    print(f"  running full-volume inference on {lq_path.name} ...", flush=True)
     pred_img = run_one_volume(model, lq_path, slice_axis, device)
+    print("  inference done", flush=True)
     # run_one_volume returns pred in lq_path's own original orientation (correct
     # for saving as a submission file); re-canonicalize so pred and gt are
     # compared in the same space, matching the official evaluator's own
@@ -141,10 +146,9 @@ def evaluate_subject(model, lq_path: Path, gt_path: Path, slice_axis: int, devic
             f"shape mismatch for {lq_path.name} vs {gt_path.name}: pred {pred.shape} vs gt {gt.shape}")
 
     z0, z1 = Z_CLIP_RANGE
-    return {
-        "full_volume": all_metrics(pred, gt, device, slice_axis),
-        "official_slab": all_metrics(pred[:, :, z0:z1], gt[:, :, z0:z1], device, slice_axis),
-    }
+    full = all_metrics(pred, gt, device, slice_axis, label="full_volume")
+    slab = all_metrics(pred[:, :, z0:z1], gt[:, :, z0:z1], device, slice_axis, label="official_slab")
+    return {"full_volume": full, "official_slab": slab}
 
 
 def parse_args():
