@@ -129,17 +129,20 @@ def all_metrics(pred: np.ndarray, target: np.ndarray, device, slice_axis: int = 
     return {"l1": l1, "psnr": psnr, "nrmse": nrmse, "ssim": ssim, "lpips": lpips_val}
 
 
-def evaluate_subject(model, lq_path: Path, gt_path: Path, slice_axis: int, device) -> dict:
+def evaluate_subject(model, lq_path: Path, gt_path: Path, slice_axis: int, device) -> tuple:
     print(f"  running full-volume inference on {lq_path.name} ...", flush=True)
     pred_img = run_one_volume(model, lq_path, slice_axis, device)
     print("  inference done", flush=True)
     # run_one_volume returns pred in lq_path's own original orientation (correct
-    # for saving as a submission file); re-canonicalize so pred and gt are
-    # compared in the same space, matching the official evaluator's own
+    # for saving as a submission file); re-canonicalize so pred, gt, and lq are
+    # all compared/saved in the same space, matching the official evaluator's own
     # load_nifti() (which canonicalizes both pred and target files it loads).
-    pred = nib.as_closest_canonical(pred_img).get_fdata(dtype=np.float32)
+    pred_canon = nib.as_closest_canonical(pred_img)
+    gt_canon = nib.as_closest_canonical(nib.load(str(gt_path)))
+    lq_canon = nib.as_closest_canonical(nib.load(str(lq_path)))
 
-    gt = nib.as_closest_canonical(nib.load(str(gt_path))).get_fdata(dtype=np.float32)
+    pred = pred_canon.get_fdata(dtype=np.float32)
+    gt = gt_canon.get_fdata(dtype=np.float32)
 
     if pred.shape != gt.shape:
         raise RuntimeError(
@@ -148,7 +151,38 @@ def evaluate_subject(model, lq_path: Path, gt_path: Path, slice_axis: int, devic
     z0, z1 = Z_CLIP_RANGE
     full = all_metrics(pred, gt, device, slice_axis, label="full_volume")
     slab = all_metrics(pred[:, :, z0:z1], gt[:, :, z0:z1], device, slice_axis, label="official_slab")
-    return {"full_volume": full, "official_slab": slab}
+    metrics = {"full_volume": full, "official_slab": slab}
+    images = {"input": lq_canon, "prediction": pred_canon, "ground_truth": gt_canon}
+    return metrics, images
+
+
+def save_samples(images: dict, out_dir: Path, subject_id: str, slice_axis: int = 2) -> None:
+    """Writes input/prediction/ground_truth as NIfTI (for browsing in a viewer) plus
+    a single labeled side-by-side PNG of a representative slice (for dropping
+    straight into a slide/report)."""
+    import matplotlib.pyplot as plt
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, img in images.items():
+        nib.save(img, str(out_dir / f"{name}.nii.gz"))
+
+    z0, z1 = Z_CLIP_RANGE
+    mid = (z0 + z1) // 2  # representative slice: middle of the officially-scored slab
+    order = ["input", "prediction", "ground_truth"]
+    titles = {"input": "Input", "prediction": "Prediction", "ground_truth": "Ground truth"}
+
+    fig, axes = plt.subplots(1, 3, figsize=(9, 3.4))
+    for ax, key in zip(axes, order):
+        idx = [slice(None)] * 3
+        idx[slice_axis] = mid
+        sl = images[key].get_fdata(dtype=np.float32)[tuple(idx)]
+        ax.imshow(np.rot90(sl), cmap="gray", vmin=0, vmax=1)
+        ax.set_title(titles[key], fontsize=11)
+        ax.axis("off")
+    fig.suptitle(f"subject {subject_id} -- axial slice {mid}", fontsize=10)
+    fig.tight_layout()
+    fig.savefig(out_dir / "comparison.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
 
 def parse_args():
@@ -171,6 +205,9 @@ def parse_args():
     p.add_argument("--slice-axis", type=int, default=2)
     p.add_argument("--device", default="cuda")
     p.add_argument("--out", required=True, help="where to write the metrics JSON")
+    p.add_argument("--save-samples", default=None,
+                   help="optional directory to also save input/prediction/ground_truth NIfTI volumes "
+                        "plus a labeled side-by-side comparison.png, one subfolder per subject")
 
     # model architecture (must match the checkpoint's training config)
     p.add_argument("--patch-size", type=int, default=128)
@@ -206,16 +243,23 @@ def main():
     lq_volumes = mri_utils.find_volumes(root, args.split, args.contrast, args.source_field, prefix="P")
     gt_volumes = mri_utils.find_volumes(root, args.split, args.contrast, args.target_field, prefix="P")
 
+    pair = f"{args.source_field}_to_{args.target_field}"
     per_subject = {}
     for sid in tqdm(args.subject_ids, desc="evaluating"):
         if sid not in lq_volumes or sid not in gt_volumes:
             print(f"WARNING: subject {sid} missing from {args.source_field} or {args.target_field} "
                   f"under {args.split}/{args.contrast} -- skipping")
             continue
-        per_subject[sid] = evaluate_subject(model, lq_volumes[sid], gt_volumes[sid], args.slice_axis, device)
-        slab = per_subject[sid]["official_slab"]
+        metrics, images = evaluate_subject(model, lq_volumes[sid], gt_volumes[sid], args.slice_axis, device)
+        per_subject[sid] = metrics
+        slab = metrics["official_slab"]
         print(f"[{sid}] official_slab: nRMSE {slab['nrmse']:.4f}  SSIM {slab['ssim']:.4f}  "
               f"LPIPS {slab['lpips']:.4f}  PSNR {slab['psnr']:.2f}  L1 {slab['l1']:.4f}")
+
+        if args.save_samples:
+            sample_dir = Path(args.save_samples) / args.contrast / pair / sid
+            save_samples(images, sample_dir, sid, args.slice_axis)
+            print(f"  saved samples to {sample_dir}")
 
     def mean_across_subjects(scope):
         keys = next(iter(per_subject.values()))[scope].keys()

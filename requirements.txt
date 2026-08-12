@@ -8,3 +8,4 @@ pyyaml>=6.0
 tqdm>=4.66
 scikit-image>=0.21   # evaluate.py: structural_similarity, matching the official evaluator's SSIM exactly
 lpips>=0.1.4         # evaluate.py: LPIPS metric (downloads AlexNet weights on first use)
+matplotlib>=3.7      # evaluate.py --save-samples: labeled input/prediction/ground_truth comparison PNG

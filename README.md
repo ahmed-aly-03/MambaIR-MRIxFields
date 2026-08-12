@@ -209,6 +209,13 @@ segmentation first (`Baseline/scripts/segment_predictions.py` or
 `lpips` downloads a small pretrained AlexNet checkpoint on first use -- needs
 outbound internet access on whichever machine runs this.
 
+**`--save-samples DIR`** additionally saves, per evaluated subject, under
+`DIR/<contrast>/<source>_to_<target>/<subject_id>/`: `input.nii.gz`,
+`prediction.nii.gz`, `ground_truth.nii.gz` (all canonical-orientation, for
+browsing in a NIfTI viewer), plus `comparison.png` -- a single labeled
+side-by-side figure (input / prediction / ground truth) at the middle slice of
+the officially-scored axial slab, ready to drop into a slide or report.
+
 ## Notes / things you may want to tune
 
 - **Stage 1 cost**: each step runs the model forward twice (once on the input patch,
